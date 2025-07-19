@@ -26,15 +26,8 @@ import cProfile
 import pstats
 
 
-def main() -> None:
-    CHUNK_SIZE = 1_000_000
-    parquet_file = "all_stock_data.parquet"
-    base_path = Path.cwd() / "data"
+def setup_dataset(parquet_file: str, base_path: Path) -> Path:
     dataset_dir = base_path / "datasets"
-    output_dir = base_path / "ticker-data"
-    base_path.mkdir(parents=True, exist_ok=True)
-    output_dir.unlink(missing_ok=True)  # remove previously made data
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     os.environ["KAGGLEHUB_CACHE"] = str(base_path)
 
@@ -55,38 +48,98 @@ def main() -> None:
         dataset_path = Path(dataset_location)
         print(f"saved dataset at: {dataset_path}")
 
-    writers: dict[str, pq.ParquetWriter] = {}
+    return dataset_path
 
-    try:
-        parquet_file_reader = pq.ParquetFile(dataset_path)
-        total_rows = parquet_file_reader.metadata.num_rows
 
-        with tqdm(total=total_rows, desc="Processing rows") as pbar:
-            for batch in parquet_file_reader.iter_batches(
-                batch_size=CHUNK_SIZE
-            ):
-                chunk = batch.to_pandas()
+def setup_output_directory(output_dir: Path) -> None:
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-                for ticker, group in chunk.groupby("Ticker"):
-                    out_file = output_dir / f"{ticker}.parquet"
-                    table = pa.Table.from_pandas(group, preserve_index=False)
 
-                    if ticker not in writers:
-                        schema = table.schema
-                        writers[ticker] = pq.ParquetWriter(out_file, schema)
+def process_stock_data2(dataset_path: Path, output_dir: Path) -> int:
+    print("importing dataset to pandas .", end="")
+    df = pq.read_table(dataset_path).to_pandas()
+    print("..", end=" ")
+    tickers = df["Ticker"].unique()
+    print("done")
 
-                    writers[ticker].write_table(table)
+    with Progress(
+        TextColumn("[progress.description]{task.description} "),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("tickers"),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        TextColumn("• {task.fields[rate]:.1f} tickers/sec"),
+        refresh_per_second=30, # eye candy
+    ) as progress:
+        task = progress.add_task(
+            "writing ticker files", total=len(tickers), rate=0.0
+        )
 
-                # Update progress bar
-                pbar.update(len(chunk))
+        processed_count = 0
 
-    finally:
-        for writer in writers.values():
-            writer.close()
+        for ticker, group in df.groupby("Ticker", sort=False):
+            out_file = output_dir / f"{ticker}.parquet"
 
-    if len(sys.argv) > 1 and sys.argv[1] == "+cleanup":
+            group.to_parquet(
+                out_file,
+                index=False,
+                engine="pyarrow",
+                compression="snappy",
+            )
+            processed_count += 1
+
+            elapsed = progress.tasks[task].elapsed or 1
+            rate = processed_count / elapsed
+            progress.update(task, advance=1, rate=rate)
+
+    return len(list(output_dir.glob("*.parquet")))
+
+
+def cleanup_dataset(dataset_path: Path) -> None:
+    if dataset_path.exists():
         dataset_path.unlink()
 
 
+def main() -> None:
+    parquet_file = "all_stock_data.parquet"
+    base_path = Path.cwd() / "data"
+    output_dir = base_path / "ticker-data"
+
+    base_path.mkdir(parents=True, exist_ok=True)
+
+    dataset_path = setup_dataset(parquet_file, base_path)
+    setup_output_directory(output_dir)
+
+    output_files_count = process_stock_data2(dataset_path, output_dir)
+
+    print(f"Created {output_files_count} ticker files")
+
+    if len(sys.argv) > 1 and sys.argv[1] == "+cleanup":
+        cleanup_dataset(dataset_path)
+
+
+def profile(fn):
+    profiler = cProfile.Profile()
+    profiler.enable()
+
+    fn()
+
+    profiler.disable()
+
+    stats = pstats.Stats(profiler)
+
+    stats.sort_stats("cumulative")
+    stats.dump_stats("stats.prof")
+
+    print("\nprofile saved to 'stats.prof'")
+
+
 if __name__ == "__main__":
-    main()
+    args = sys.argv[1:]
+    if "+profile" in args:
+        profile(main)
+    else:
+        main()
