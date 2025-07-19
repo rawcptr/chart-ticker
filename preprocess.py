@@ -11,10 +11,19 @@
 import kagglehub
 import sys
 from pathlib import Path
-from tqdm import tqdm
-import pyarrow as pa
+from rich.progress import (
+    Progress,
+    BarColumn,
+    TextColumn,
+    MofNCompleteColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 import pyarrow.parquet as pq
 import os
+import shutil
+import cProfile
+import pstats
 
 
 def main() -> None:
