@@ -1,10 +1,10 @@
 # /// script
 # requires-python = ">=3.13"
 # dependencies = [
-#     "kagglehub",
-#     "pandas",
-#     "pyarrow",
-#     "tqdm",
+#    "kagglehub",
+#    "pandas",
+#    "pyarrow",
+#    "rich",
 # ]
 # ///
 
