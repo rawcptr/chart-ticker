@@ -3,18 +3,18 @@
 # top-most EditorConfig file
 root = true
 
-[flake.nix]
+[*.nix]
 indent_style = space
 indent_size = 2
 charset = utf-8
-trim_trailing_whitespace = true
+trim_trailing_whitespace = false
 insert_final_newline = true
 
 
-[*]
-indent_style = tab
+[*.py]
+indent_style = space
 indent_size = 4
 end_of_line = lf
 charset = utf-8
-trim_trailing_whitespace = true
+trim_trailing_whitespace = false
 insert_final_newline = true
